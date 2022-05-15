@@ -1,5 +1,11 @@
 <template>
   <div class="container mx-auto flex flex-col items-center bg-gray-100 p-4">
+    <div v-if="!fetchedCoinList" class="fixed w-100 h-100 opacity-80 bg-purple-800 inset-0 z-50 flex items-center justify-center">
+      <svg class="animate-spin -ml-1 mr-3 h-12 w-12 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg>
+    </div>
     <div class="container">
       <section>
         <div class="flex">
@@ -9,6 +15,7 @@
             >
             <div class="mt-1 relative rounded-md shadow-md">
               <input
+                  @keyup="inputHelper"
                   @keypress.enter="addTicker"
                   v-model="ticker"
                   type="text"
@@ -18,19 +25,14 @@
                   placeholder="Например DOGE"
               />
             </div>
-            <div class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap">
-            <span @click="appendCoin('btc')" class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer">
-              BTC
-            </span>
-              <span @click="appendCoin('doge')" class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer">
-              DOGE
-            </span>
-              <span  @click="appendCoin('bch')" class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer">
-              BCH
-            </span>
-              <span  @click="appendCoin('eth')" class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer">
-              ETH
-            </span>
+            <div  v-if="ticker" class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap">
+              <span
+                  @click="appendCoin(coinItem.Symbol)"
+                  v-for="coinItem in actualaizedCoinList"
+                  :key="coinItem.Id"
+                  class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer">
+              {{coinItem.Symbol}}
+              </span>
             </div>
             <div v-if="tAdded" class="text-sm text-red-600">Такой тикер уже добавлен</div>
           </div>
@@ -148,10 +150,13 @@ export default {
   data(){
     return {
       ticker: '',
+      maxInputs: 4,
       tAdded: false,
       tickers: [],
       curTicker: null,
-      graph: []
+      graph: [],
+      fetchedCoinList: [],
+      actualaizedCoinList:[]
     }
   },
   methods: {
@@ -163,9 +168,21 @@ export default {
       this.ticker = coin
       this.addTicker()
     },
+    updateCurrency (currency) {
+      setInterval(async () =>{
+        const fetchedData = await fetch(
+            `https://min-api.cryptocompare.com/data/price?fsym=${currency}&tsyms=USD&api_key=125a4fcba89334b404b1060a1456be5995e6384a201fc0c775369dcb938e89b5`
+        );
+        const parsedData= await fetchedData.json();
+        this.tickers.find(t => t.name === currency).value = parsedData.USD > 1 ? parsedData.USD.toFixed(2) : parsedData.USD.toPrecision(2)
+        if (currency === this.curTicker?.name) {
+          this.graph.push(parsedData.USD > 1 ? parsedData.USD.toFixed(2) : parsedData.USD.toPrecision(2))
+        }
+      },5000)
+    },
     addTicker () {
       const newTicker = {
-        name: this.ticker.toUpperCase(),
+        name: this.ticker,
         value: '-'
       };
       if (this.tickers.find(t => t.name === newTicker.name)){
@@ -174,25 +191,17 @@ export default {
         setTimeout(() => this.tAdded = false,2000)
         return
       }
-      setInterval(async () =>{
-        const fetchedData = await fetch(
-            `https://min-api.cryptocompare.com/data/price?fsym=${newTicker.name}&tsyms=USD&api_key=125a4fcba89334b404b1060a1456be5995e6384a201fc0c775369dcb938e89b5`
-        );
-        const parsedData= await fetchedData.json();
-        this.tickers.find(t => t.name === newTicker.name).value = parsedData.USD > 1 ? parsedData.USD.toFixed(2) : parsedData.USD.toPrecision(2)
-        if (newTicker.name === this.curTicker?.name) {
-          this.graph.push(parsedData.USD > 1 ? parsedData.USD.toFixed(2) : parsedData.USD.toPrecision(2))
-        }
-      },5000)
-
+      this.updateCurrency(newTicker.name)
       this.tickers.push(newTicker);
       this.ticker = ''
+      window.localStorage.setItem('tickerList', JSON.stringify(this.tickers));
     },
     removeTicker(n){
       this.tickers = this.tickers.filter((elem) => elem !== n)
       if (this.tickers.length < 1 || this.curTicker === n){
         this.curTicker = null
       }
+      window.localStorage.setItem('tickerList', JSON.stringify(this.tickers));
     },
     normalizeGraph () {
       const maxVal = Math.max(...this.graph);
@@ -200,7 +209,42 @@ export default {
       return this.graph.map(
           price => 5 + ((price - minVal) * 95) / (maxVal - minVal)
       )
+    },
+    fetchCoins () {
+      fetch('https://min-api.cryptocompare.com/data/all/coinlist?summary=true')
+          .then((response) => {
+            return response.json()
+          })
+          .then((data) => {
+            for (let elem in data.Data) {
+              data.Data[elem].Id = Number(data.Data[elem].Id)
+              this.fetchedCoinList.push(data.Data[elem])
+            }
+            this.fetchedCoinList.sort((a, b) => {
+                return a.Symbol.length - b.Symbol.length
+            })
+          })
+    },
+    inputHelper(){
+      let counter = 0;
+      this.actualaizedCoinList = [];
+      for (let i = 0; i <= this.fetchedCoinList.length-1; i++) {
+        if (this.fetchedCoinList[i].Symbol && this.fetchedCoinList[i].Symbol.toUpperCase().includes(this.ticker.toUpperCase())){
+          this.actualaizedCoinList.push(this.fetchedCoinList[i])
+          counter++
+        }
+        if (counter === this.maxInputs){
+          break;
+        }
+      }
     }
+  },
+  mounted() {
+    this.tickers = JSON.parse(window.localStorage.getItem('tickerList'))
+    if (this.tickers) {
+      this.tickers.forEach(ticker => this.updateCurrency(ticker.name))
+    }
+    this.fetchCoins()
   }
 }
 </script>
