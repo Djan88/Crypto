@@ -52,7 +52,7 @@
                             {{ t.name }} - USD
                         </dt>
                         <dd class="mt-1 text-3xl font-semibold text-gray-900">
-                            {{ t.value }}
+                            {{ formatedPrice(t.value) }}
                         </dd>
                     </div>
                     <div class="w-full border-t border-gray-200"></div>
@@ -87,6 +87,8 @@
 </template>
 
 <script>
+import {loadTickers} from './api'
+
 export default {
     name: 'App',
     data() {
@@ -104,19 +106,22 @@ export default {
         }
     },
     mounted() {
+        // Получаем тикеры из LS, если они есть
         this.tickers = JSON.parse(window.localStorage.getItem('tickerList'))
         
         // Получение параметров из URL
-        let windowData = Object.fromEntries(new URL(window.location).searchParams.entries())
-        // Object.assign(this, windowData)
-        if (windowData.filter) {
-            this.filterParam = windowData.filter
+        const windowData = Object.fromEntries(new URL(window.location).searchParams.entries())
+        if (windowData.filterParam) {
+            this.filterParam = windowData.filterParam
         }
         if (windowData.page) {
             this.page = Number(windowData.page)
         }
-        this.updateCurrencyAll(this.tickers)
+        
+        // Получаем список имен криптовалют
         this.fetchCoinNames()
+        // Обновляем курсы тикеров
+        setInterval(this.updateCurrencys, 5000)
     },
     computed: {
         // Диапазон тикеров на страницу
@@ -157,31 +162,42 @@ export default {
             }
         }
     },
+    watch: {
+        filterParam() {
+            this.page = 1;
+        },
+        pageStateOptions(value) {
+            window.history.pushState(null, '', `${window.location.pathname}?filterParam=${value.filterParam}&page=${value.page}`)
+        },
+        tickers() {
+            window.localStorage.setItem('tickerList', JSON.stringify(this.tickers));
+        },
+        curTicker() {
+            this.graph = []
+        }
+    },
     methods: {
         appendCoin(coin) {
             this.ticker = coin
             this.addTicker()
         },
+        // Приведение курса к нормальному виду
+        formatedPrice(price){
+            return price > 1 ? price.toFixed(2) : price.toPrecision(2)
+        },
         // Обновление криптовалют
-        updateCurrencyAll(currency) {
-            setInterval(async () => {
-                const tickersNames = []
-                currency.forEach(ticker => {
-                    tickersNames.push(ticker.name)
-                })
-                const fetchedData = await fetch(
-                    `https://min-api.cryptocompare.com/data/pricemulti?fsyms=${tickersNames.join()}&tsyms=USD&api_key=125a4fcba89334b404b1060a1456be5995e6384a201fc0c775369dcb938e89b5`
-                );
-                const parsedData = await fetchedData.json();
-                currency.forEach(t => {
-                    if (parsedData[t.name]) {
-                        t.value = parsedData[t.name].USD > 1 ? parsedData[t.name].USD.toFixed(2) : parsedData[t.name].USD.toPrecision(2)
-                    }
-                    if (this.curTicker && t.name === this.curTicker.name) {
-                        this.graph.push(parsedData[t.name].USD > 1 ? parsedData[t.name].USD.toFixed(2) : parsedData[t.name].USD.toPrecision(2))
-                    }
-                })
-            }, 5000)
+        async updateCurrencys() {
+            if(!this.tickers.length){
+                return
+            }
+            const parsedData = await loadTickers(this.tickers.map(t => t.name))
+            this.tickers.forEach(t => {
+                const value = Number(parsedData[t.name])
+                t.value = value ?? "-"
+                if (this.curTicker && t.name === this.curTicker.name) {
+                    this.graph.push(value)
+                }
+            })
         },
         // Получение списка названий криптовалют
         fetchCoinNames() {
@@ -202,7 +218,7 @@ export default {
         // Добавление тикера
         addTicker() {
             const newTicker = {
-                name: this.ticker,
+                name: this.ticker.toUpperCase(),
                 value: '-'
             };
             if (this.tickers.find(t => t.name === newTicker.name)) {
@@ -224,7 +240,6 @@ export default {
             if (this.tickers.length < 1 || this.curTicker === n) {
                 this.curTicker = null
             }
-            console.log(this.paginatedTickers.length);
             if (this.paginatedTickers.length === 0 && this.page > 1) {
                 this.page -= 1
             }
@@ -243,21 +258,7 @@ export default {
                 }
             }
         }
-    },
-    watch: {
-        filterParam() {
-            this.page = 1;
-        },
-        pageStateOptions(value) {
-            window.history.pushState(null, '', `${window.location.pathname}?filter=${value.filterParam}&page=${value.page}`)
-        },
-        tickers() {
-            window.localStorage.setItem('tickerList', JSON.stringify(this.tickers));
-        },
-        curTicker() {
-            this.graph = []
-        }
-    },
+    }
 }
 </script>
 
