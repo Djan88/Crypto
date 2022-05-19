@@ -87,7 +87,7 @@
 </template>
 
 <script>
-import {loadTickers} from './api'
+import {subscribeToTicker, unsubscribeFromTicker} from './api'
 
 export default {
     name: 'App',
@@ -108,6 +108,11 @@ export default {
     mounted() {
         // Получаем тикеры из LS, если они есть
         this.tickers = JSON.parse(window.localStorage.getItem('tickerList'))
+        this.tickers.forEach( t => {
+            subscribeToTicker(t.name, (value) => {
+                this.updateTickers(t.name, value)
+            })
+        })
         
         // Получение параметров из URL
         const windowData = Object.fromEntries(new URL(window.location).searchParams.entries())
@@ -137,7 +142,7 @@ export default {
         },
         // Постраничная пагинация
         paginatedTickers() {
-            return this.filtredTickers.slice(this.fromIndex, this.toIndex)
+            return this.filtredTickers.slice(this.fromIndex, this.toIndex);
         },
         // Есть ли еще страницы
         hasNextPage() {
@@ -177,27 +182,35 @@ export default {
         }
     },
     methods: {
+        updateTickers(tickerName, value) {
+            this.tickers
+                .filter(t => t.name === tickerName)
+                .forEach(t => {t.value = value})
+        },
         appendCoin(coin) {
             this.ticker = coin
             this.addTicker()
         },
         // Приведение курса к нормальному виду
         formatedPrice(price){
+            if (price === '-') {
+                return price
+            }
             return price > 1 ? price.toFixed(2) : price.toPrecision(2)
         },
         // Обновление криптовалют
         async updateCurrencys() {
-            if(!this.tickers.length){
-                return
-            }
-            const parsedData = await loadTickers(this.tickers.map(t => t.name))
-            this.tickers.forEach(t => {
-                const value = Number(parsedData[t.name])
-                t.value = value ?? "-"
-                if (this.curTicker && t.name === this.curTicker.name) {
-                    this.graph.push(value)
-                }
-            })
+            // if(!this.tickers.length){
+            //     return
+            // }
+            // const parsedData = await loadTickers(this.tickers.map(t => t.name))
+            // this.tickers.forEach(t => {
+            //     const value = Number(parsedData[t.name])
+            //     t.value = value ?? "-"
+            //     if (this.curTicker && t.name === this.curTicker.name) {
+            //         this.graph.push(value)
+            //     }
+            // })
         },
         // Получение списка названий криптовалют
         fetchCoinNames() {
@@ -221,6 +234,7 @@ export default {
                 name: this.ticker.toUpperCase(),
                 value: '-'
             };
+            // Если такой тикер уже есть, выходим
             if (this.tickers.find(t => t.name === newTicker.name)) {
                 this.tAdded = true
                 this.ticker = ''
@@ -230,16 +244,20 @@ export default {
             if (this.ticker.length) {
                 this.tickers.push(newTicker)
                 this.tickers = [...this.tickers]
+                subscribeToTicker(newTicker.name, value => {
+                    this.updateTickers(newTicker.name, value)
+                })
                 this.ticker = ''
             }
-
         },
         // Удаление тикера
         removeTicker(n) {
             this.tickers = this.tickers.filter((elem) => elem !== n)
+            unsubscribeFromTicker(n.name)
             if (this.tickers.length < 1 || this.curTicker === n) {
                 this.curTicker = null
             }
+            // Если на странице пагинации не осталось тикеров, переходим на предыдущую
             if (this.paginatedTickers.length === 0 && this.page > 1) {
                 this.page -= 1
             }
