@@ -1,5 +1,6 @@
-<!-- Вынести запрос в api.js -->
 <!-- Обработать ошибки API -->
+<!-- Сохранять список токенов в URL -->
+<!-- Если монтеки нет в списке монет, то выделять ее красным -->
 <template>
 <div class="container mx-auto flex flex-col items-center bg-gray-100 p-4">
     <div v-if="!fetchedCoinList" class="fixed w-100 h-100 opacity-80 bg-purple-800 inset-0 z-50 flex items-center justify-center">
@@ -71,8 +72,13 @@
             <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
                 {{ curTicker.name }} - USD
             </h3>
-            <div class="flex items-end border-gray-600 border-b border-l h-64">
-                <div v-for="(bar, idx) in normalizedGraph" :key="idx" :style="{ height: `${bar}%` }" class="bg-purple-800 border w-10 h-24"></div>
+            <div class="flex items-end border-gray-600 border-b border-l h-64" ref="graph">
+                <div 
+                    v-for="(bar, idx) in normalizedGraph" 
+                    :key="idx" 
+                    :style="{ height: `${bar}%` }" 
+                    class="bg-purple-800 border w-10 h-24"
+                    ref="graphElem"></div>
             </div>
             <button @click="curTicker = null" type="button" class="absolute top-0 right-0">
                 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svgjs="http://svgjs.com/svgjs" version="1.1" width="30" height="30" x="0" y="0" viewBox="0 0 511.76 511.76" style="enable-background:new 0 0 512 512" xml:space="preserve">
@@ -99,7 +105,7 @@ export default {
             tAdded: false,
             tickers: [],
             curTicker: null,
-            graph: [],
+            graphList: [],
             page: 1,
             fetchedCoinList: [],
             actualaizedCoinList: []
@@ -122,11 +128,12 @@ export default {
         if (windowData.page) {
             this.page = Number(windowData.page)
         }
-        
         // Получаем список имен криптовалют
         this.fetchCoinNames()
-        // Обновляем курсы тикеров
-        setInterval(this.updateCurrencys, 5000)
+        window.addEventListener('resize', this.calculateMaxGraphElements())
+    },
+    beforeMount(){
+        window.removeEventListener('resize', this.calculateMaxGraphElements())
     },
     computed: {
         // Диапазон тикеров на страницу
@@ -150,12 +157,12 @@ export default {
         },
         // Форматирование графика
         normalizedGraph() {
-            const maxVal = Math.max(...this.graph);
-            const minVal = Math.min(...this.graph);
+            const maxVal = Math.max(...this.graphList);
+            const minVal = Math.min(...this.graphList);
             if (maxVal === minVal) {
-                return this.graph.map(() => 50)
+                return this.graphList.map(() => 50)
             }
-            return this.graph.map(
+            return this.graphList.map(
                 price => 5 + ((price - minVal) * 95) / (maxVal - minVal)
             )
         },
@@ -176,16 +183,36 @@ export default {
         },
         tickers() {
             window.localStorage.setItem('tickerList', JSON.stringify(this.tickers));
+            if(this.curTicker){
+                // const value = this.tickers[this.curTicker.name]
+                // t.value = value ?? "-"
+                // if (this.curTicker && t.name === this.curTicker.name) {
+                // this.graph.push(value)
+            }
         },
         curTicker() {
-            this.graph = []
+            this.graphList = []
         }
     },
     methods: {
+        calculateMaxGraphElements(){
+            if (this.$refs.graphElem) {
+                return this.$refs.graph.offsetWidth / this.$refs.graphElem[0].offsetWidth
+            }
+        },
         updateTickers(tickerName, value) {
             this.tickers
                 .filter(t => t.name === tickerName)
-                .forEach(t => {t.value = value})
+                .forEach(t => {
+                    if(t === this.curTicker){
+                        this.graphList.push(value)
+                    }
+                    t.value = value
+                })
+            if(this.graphList.length > this.calculateMaxGraphElements()){
+                this.graphList = this.graphList.slice(this.graphList.length - this.calculateMaxGraphElements(), this.graphList.length)
+            }
+            this.calculateMaxGraphElements()
         },
         appendCoin(coin) {
             this.ticker = coin
@@ -193,25 +220,25 @@ export default {
         },
         // Приведение курса к нормальному виду
         formatedPrice(price){
-            if (price === '-') {
-                return price
+            if (!price || price === '-') {
+                return
             }
             return price > 1 ? price.toFixed(2) : price.toPrecision(2)
         },
         // Обновление криптовалют
-        async updateCurrencys() {
+        // async updateCurrencys() {
             // if(!this.tickers.length){
             //     return
             // }
             // const parsedData = await loadTickers(this.tickers.map(t => t.name))
             // this.tickers.forEach(t => {
-            //     const value = Number(parsedData[t.name])
-            //     t.value = value ?? "-"
-            //     if (this.curTicker && t.name === this.curTicker.name) {
-            //         this.graph.push(value)
-            //     }
+                // const value = Number(parsedData[t.name])
+                // t.value = value ?? "-"
+                // if (this.curTicker && t.name === this.curTicker.name) {
+                //     this.graph.push(value)
+                // }
             // })
-        },
+        // },
         // Получение списка названий криптовалют
         fetchCoinNames() {
             fetch('https://min-api.cryptocompare.com/data/all/coinlist?summary=true')
@@ -232,7 +259,8 @@ export default {
         addTicker() {
             const newTicker = {
                 name: this.ticker.toUpperCase(),
-                value: '-'
+                value: '-',
+                isExist: true
             };
             // Если такой тикер уже есть, выходим
             if (this.tickers.find(t => t.name === newTicker.name)) {
