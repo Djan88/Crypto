@@ -3,6 +3,7 @@
 <!-- Если монтеки нет в списке монет, то выделять ее красным -->
 <template>
 <div class="container mx-auto flex flex-col items-center bg-gray-100 p-4">
+
     <app-paranja :fetchedCoinList="fetchedCoinList"></app-paranja>
     <div class="container">
         <app-ticker :tAdded="tAdded" :fetchedCoinList = "fetchedCoinList" @add-ticker="addTicker"/>
@@ -47,6 +48,9 @@ import {subscribeToTicker, unsubscribeFromTicker} from './api'
 import AppTicker from './components/AppTicker.vue'
 import AppParanja from './components/AppParanja.vue'
 import AppGraph from './components/AppGraph.vue'
+import AppModal from './components/AppModal.vue'
+import AppButton from './components/AppButton.vue'
+import IconPlus from './components/icons/IconPlus.vue'
 
 export default {
     name: 'App',
@@ -59,12 +63,19 @@ export default {
             curTicker: null,
             graphList: [],
             page: 1,
+            mainModal: false,
+            deleteKey: '',
+            deletePhrase: 'DEL',
+            deleteModal: false
         }
     },
     components: {
         AppTicker,
         AppParanja,
-        AppGraph
+        AppGraph,
+        AppModal,
+        AppButton,
+        IconPlus
     },
     mounted() {
         // Получаем тикеры из LS, если они есть
@@ -133,6 +144,25 @@ export default {
         }
     },
     methods: {
+        // Закрытие основной модали
+        mainModalClose(){
+            this.mainModal = false
+        },
+
+        // Закрытие основной модали
+        deleteModalClose(){
+            this.deleteModal = false
+        },
+        // Удаление ключа
+        deletingKey(){
+            if(!this.deleteKey.length){
+                return;
+            }
+            if(this.deleteKey === this.deletePhrase){
+                this.deleteModal = false
+                this.deleteKey = ''
+            }
+        },
         // Получение списка названий монет
         fetchCoinNames() {
             fetch('https://min-api.cryptocompare.com/data/all/coinlist?summary=true')
